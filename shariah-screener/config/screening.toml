@@ -1,0 +1,58 @@
+# Shariah screening rules (AAOIFI Standard 21 style).
+# All thresholds are PERCENTAGES. Edit freely; no code changes needed.
+
+[thresholds]
+debt_to_market_cap = 30.0               # total interest-bearing debt / market cap
+cash_to_market_cap = 30.0               # (cash + interest-bearing investments) / market cap
+impermissible_income_to_revenue = 5.0   # impermissible (interest) income / total revenue
+# A ratio within this many percentage points of its threshold (either side,
+# inclusive) is DOUBTFUL rather than a clean PASS or clean FAIL.
+doubtful_margin_pp = 2.0
+
+# Business-activity blacklist. Keywords are matched case-insensitively at the
+# START of a word in the stock's sector + industry text ("bank" matches
+# "Banks"/"Banking" but "arms" does not match "Pharmaceuticals"/"Farms").
+# The category name is what shows up in the CSV as the failure reason.
+[business_blacklist]
+conventional_finance = [
+  "bank", "nbfc", "non banking financial", "non-banking financial",
+  "insurance", "housing finance", "consumer finance", "microfinance",
+  "lending", "credit card",
+]
+alcohol = ["alcohol", "brewer", "distiller", "spirits", "liquor", "wine", "beer"]
+tobacco = ["tobacco", "cigarette"]
+gambling = ["gambling", "casino", "betting", "lottery", "wagering"]
+pork = ["pork", "swine"]
+adult_entertainment = ["adult entertainment", "pornograph"]
+weapons = ["weapon", "arms & ammunition", "arms and ammunition", "ammunition", "firearm"]
+
+# Per-symbol overrides beat keyword matching. Use them where the data
+# vendor's sector label hides the real business (conglomerates, holding
+# companies) or to clear a false-positive keyword hit.
+#   business = "FAIL" -> business screen fails with `reason`
+#   business = "PASS" -> business screen passes; ratio screens still apply
+[symbol_overrides.ITC]
+business = "FAIL"
+reason = "tobacco: cigarettes are ITC's core profit segment even when labelled FMCG"
+
+[symbol_overrides.BAJFINANCE]
+business = "FAIL"
+reason = "conventional_finance: interest-based NBFC lending"
+
+[symbol_overrides.BAJAJFINSV]
+business = "FAIL"
+reason = "conventional_finance: holding company of NBFC lending + conventional insurance"
+
+[symbol_overrides.JIOFIN]
+business = "FAIL"
+reason = "conventional_finance: NBFC / financial services holding company"
+
+[symbol_overrides.SHRIRAMFIN]
+business = "FAIL"
+reason = "conventional_finance: interest-based NBFC lending"
+
+# Defence is NOT blacklisted by default: AAOIFI's list does not name it
+# explicitly and screeners disagree. Uncomment to align with stricter screeners.
+# [symbol_overrides.BEL]
+# business = "FAIL"
+# reason = "weapons: defence electronics / weapon systems"

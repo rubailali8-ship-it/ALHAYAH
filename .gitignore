@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+shariah-screener/cache/
+shariah-screener/results.csv
