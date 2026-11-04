@@ -4,6 +4,12 @@ Screens Indian stocks against AAOIFI Shariah rules and writes `results.csv`
 with per-rule ratios, pass/fail flags and a final verdict, so you can
 benchmark against Musaffa / Zoya.
 
+Data provider: **BharatStock** (`bharatstockapi.com`, keys start `bsk_live_`).
+Each stock costs **2 API calls** (company + annual financials). The full
+Nifty 50 needs ~100 calls. On the 60/day plan it finishes over two days: run
+it, and when the quota is hit it stops calling. Run it again the next day and
+the cache skips everything already fetched.
+
 ## Quick start
 
 ```bash
@@ -11,9 +17,11 @@ cd shariah-screener
 python3 -m venv .venv && source .venv/bin/activate     # Python 3.11+
 pip install -r requirements.txt
 cp .env.example .env            # then put your key in DATA_API_KEY
+# Windows tip: edit .env in Notepad. The file needs ONE line:
+#   DATA_API_KEY=bsk_live_xxxxxxxx
 
-python screen.py --only TCS                 # 1 credit: test the field mapping first
-python screen.py --inspect TCS              # print every JSON path in the cached response
+python screen.py --only TCS                 # 2 credits: test the field mapping first
+python screen.py --inspect TCS              # print every JSON path + the mapped values (uses cache, 0 credits)
 # fix config/api.toml [fields] if anything came back DATA_MISSING, then:
 python screen.py                            # full Nifty 50 -> results.csv
 ```
@@ -36,10 +44,22 @@ python screen.py                            # full Nifty 50 -> results.csv
 | 3 | (Cash + interest-bearing investments) / market cap | < 30% |
 | 4 | Impermissible (interest) income / total revenue | < 5% |
 
+**How each input is sourced from BharatStock**
+
+| Input | Source | Note |
+|---|---|---|
+| Market cap | `market_cap` (Rs crore) | spot |
+| Total debt | `metrics.total_debt` | |
+| Cash + interest-bearing investments | `metrics.cash_per_share × market_cap / price` | no balance-sheet cash field, so it's derived from per-share data |
+| Revenue, impermissible income | latest annual filing, consolidated row: `revenue`, `other_income` | `other_income` is an **upper bound** on interest income |
+
 **Verdict logic (in order):**
 1. Business screen fails → `NOT_HALAL` (even if financials are missing — no ratio can rescue a bank).
 2. Any input missing / unusable (incl. zero market cap or revenue, fetch error, no sector) → `DATA_MISSING`. Nothing is guessed.
-3. Any ratio fails by **more** than 2 pp → `NOT_HALAL`.
+3. Any ratio fails by **more** than 2 pp → `NOT_HALAL`. Exception: while
+   `impermissible_income_is_upper_bound = true`, a failing income ratio is
+   capped at `DOUBTFUL`. "Other income" also includes dividends and gains, so it
+   can show a stock passes but can't show it fails.
 4. Any ratio within ±2 pp of its threshold (inclusive, either side) → `DOUBTFUL`.
 5. Otherwise → `HALAL`.
 
@@ -86,6 +106,7 @@ screener/models.py         dataclasses + Verdict enum
 screener/data_fetcher.py   API client, cache, JSON-path field mapping
 screener/screening.py      pure AAOIFI logic (no I/O)
 screener/output.py         CSV + terminal summary
+screener/env.py            forgiving .env loader (handles Windows UTF-16 / BOM)
 tests/                     pytest suite (no network needed)
 ```
 
@@ -93,12 +114,16 @@ Run tests: `python -m pytest -q`
 
 ## Known gaps vs Musaffa / Zoya (expect differences here)
 
-- **Field mapping is unverified.** The default paths in `api.toml` are a
-  best guess at IndianAPI's schema; the build sandbox couldn't reach the API.
-  Run `--only TCS` then `--inspect TCS` and correct the paths first.
-- **Income screen uses interest income only.** AAOIFI's 5% covers *all*
-  impermissible revenue (e.g. a hotel chain's bar sales). Musaffa/Zoya use
-  segment-level revenue data; this prototype can't see it.
+- **Mapping is built from the official client, but not yet tested live.**
+  Field names come from the `bharatstock` Python SDK's models. Confirm with
+  `--only TCS` + `--inspect TCS` before the full run.
+- **Income screen uses "other income" as a proxy.** AAOIFI's 5% covers *all*
+  impermissible revenue (e.g. a hotel chain's bar sales); Musaffa/Zoya use
+  segment-level revenue. Here it's other income (interest + dividends +
+  gains), which overstates interest. Failures become DOUBTFUL for manual checking.
+- **Cash ratio likely understated.** `cash_per_share` probably counts only cash
+  and equivalents, not treasury investments (TCS/Infosys hold large
+  amounts). Expect lower cash ratios than Musaffa for cash-rich IT companies.
 - **Business screen is label-based.** Mixed-activity companies are screened
   on their sector tag. Use overrides for known cases.
 - **Market cap is spot, not averaged.** Some AAOIFI implementations use a

@@ -14,6 +14,9 @@ class ScreeningConfig:
     cash_threshold: float = 30.0
     income_threshold: float = 5.0
     doubtful_margin: float = 2.0
+    # Income field is a proxy that can only overstate impermissible income
+    # (e.g. "other income"), so a failing income ratio can't be trusted as a clear fail.
+    income_is_upper_bound: bool = False
     # category -> keywords, e.g. {"alcohol": ["brewer", "liquor"]}
     blacklist: dict[str, list[str]] = field(default_factory=dict)
     # SYMBOL -> {"business": "PASS"|"FAIL", "reason": str}
@@ -24,9 +27,9 @@ class ScreeningConfig:
 class ApiConfig:
     name: str
     base_url: str
-    endpoint: str
-    symbol_param: str
     auth_header: str
+    # endpoint key -> {"path": "/v1/stocks/{symbol}", "params": {...}}
+    endpoints: dict[str, dict]
     timeout_seconds: float
     request_delay_seconds: float
     cache_ttl_days: float
@@ -54,6 +57,7 @@ def load_screening_config(path: Path | None = None) -> ScreeningConfig:
         cash_threshold=float(t.get("cash_to_market_cap", 30.0)),
         income_threshold=float(t.get("impermissible_income_to_revenue", 5.0)),
         doubtful_margin=float(t.get("doubtful_margin_pp", 2.0)),
+        income_is_upper_bound=bool(raw.get("data_caveats", {}).get("impermissible_income_is_upper_bound", False)),
         blacklist={k: [str(w).lower() for w in v] for k, v in raw.get("business_blacklist", {}).items()},
         symbol_overrides=overrides,
     )
@@ -65,9 +69,11 @@ def load_api_config(path: Path | None = None) -> ApiConfig:
     return ApiConfig(
         name=a.get("name", "provider"),
         base_url=a["base_url"].rstrip("/"),
-        endpoint=a["endpoint"],
-        symbol_param=a["symbol_param"],
         auth_header=a["auth_header"],
+        endpoints={
+            k: {"path": v["path"], "params": dict(v.get("params", {}))}
+            for k, v in raw["endpoints"].items()
+        },
         timeout_seconds=float(a.get("timeout_seconds", 30)),
         request_delay_seconds=float(a.get("request_delay_seconds", 1.0)),
         cache_ttl_days=float(a.get("cache_ttl_days", 30)),

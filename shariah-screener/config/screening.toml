@@ -9,6 +9,14 @@ impermissible_income_to_revenue = 5.0   # impermissible (interest) income / tota
 # inclusive) is DOUBTFUL rather than a clean PASS or clean FAIL.
 doubtful_margin_pp = 2.0
 
+[data_caveats]
+# true when the "interest income" field is really a broader number, like
+# BharatStock's "other income" (interest + dividends + gains). An upper bound
+# can show a PASS but not a FAIL, so a failing income ratio is downgraded
+# to DOUBTFUL (check the annual report). Set false once you have true
+# interest-income data.
+impermissible_income_is_upper_bound = true
+
 # Business-activity blacklist. Keywords are matched case-insensitively at the
 # START of a word in the stock's sector + industry text ("bank" matches
 # "Banks"/"Banking" but "arms" does not match "Pharmaceuticals"/"Farms").

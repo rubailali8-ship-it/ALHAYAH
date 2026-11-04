@@ -1,59 +1,77 @@
-# Data provider settings + field mapping.
+# Data provider settings + field mapping for BharatStock (bharatstockapi.com).
 # The API key is NOT stored here; it comes from DATA_API_KEY in .env.
+# Schema source: the official `bharatstock` Python client (v0.1.12).
 
 [api]
-name = "indianapi"
-base_url = "https://stock.indianapi.in"
-endpoint = "/stock"
-symbol_param = "name"          # query parameter that carries the symbol
-auth_header = "X-Api-Key"      # header that carries DATA_API_KEY
+name = "bharatstock"
+base_url = "https://bharatstockapi.com"
+auth_header = "X-API-Key"
 timeout_seconds = 30
-request_delay_seconds = 1.0    # politeness delay between LIVE calls only
+request_delay_seconds = 1.5    # politeness delay between LIVE calls only
 cache_ttl_days = 30            # fundamentals change quarterly; 30d is safe
 
+# Each stock needs these calls. Every endpoint response is cached separately,
+# so if the daily quota runs out halfway, the next run only fetches what's left.
+# {symbol} is URL-encoded automatically (M&M works).
+[endpoints.stock]          # company info, sector, market cap, ~70 metrics
+path = "/v1/stocks/{symbol}"
+params = { exchange = "NSE" }
+
+[endpoints.financials]     # annual P&L (+ some balance sheet)
+path = "/v1/stocks/{symbol}/financials"
+params = { period_type = "annual", page_size = 4, exchange = "NSE" }
+
 # ---------------------------------------------------------------------------
-# Field mapping: where each value lives in the provider's JSON response.
-# Each field lists candidate paths; the first one that resolves to a value wins.
+# Field mapping. Each field lists candidate paths; the first that resolves wins.
+# Paths start with an endpoint name from above.
 #
-# Path syntax:
-#   a.b.c              nested keys
-#   a[0]               list index
-#   a[key=TotalDebt]   first list item whose "key" equals "TotalDebt"
+#   a.b.c                     nested keys
+#   a[0]                      list index
+#   a[consolidation_type=consolidated]   first list item whose field matches (case-insensitive)
+#   x * y / z                 arithmetic on several paths (spaces around * and / required)
 #
-# These defaults are a best guess at IndianAPI's /stock schema. After your
-# first live call, run:  python screen.py --inspect TCS
-# to print every path in the cached response, then fix the paths below.
+# To see every available path:  python screen.py --inspect TCS
 # ---------------------------------------------------------------------------
 [fields]
-company = ["companyName", "companyProfile.companyName"]
-sector = ["companyProfile.mgSector", "sector", "companyProfile.sector"]
-industry = ["industry", "companyProfile.mgIndustry"]
-market_cap = [
-  "keyMetrics.valuation[key=marketCap].value",
-  "keyMetrics.priceandVolume[key=marketCap].value",
-  "marketCap",
-]
-total_debt = [
-  "financials[Type=Annual].stockFinancialMap.BAL[key=TotalDebt].value",
-  "financials[Type=Annual].stockFinancialMap.BAL[key=TotalLongTermDebt].value",
-]
-cash_and_interest_investments = [
-  "financials[Type=Annual].stockFinancialMap.BAL[key=CashandShortTermInvestments].value",
-  "financials[Type=Annual].stockFinancialMap.BAL[key=CashEquivalents].value",
-]
-total_revenue = [
-  "financials[Type=Annual].stockFinancialMap.INC[key=TotalRevenue].value",
-  "financials[Type=Annual].stockFinancialMap.INC[key=Revenue].value",
-]
-interest_income = [
-  "financials[Type=Annual].stockFinancialMap.INC[key=InterestIncomeNonBank].value",
-  "financials[Type=Annual].stockFinancialMap.INC[key=InterestIncome].value",
-]
-data_date = ["financials[Type=Annual].EndDate", "financials[0].EndDate"]
+company = ["stock.company_name"]
+sector = ["stock.sector"]
+industry = ["stock.industry"]
 
-# Multiply each raw value by this factor so all money fields share ONE unit
-# (ratios are unit-free only if numerator and denominator match).
-# Example: market cap in crores but statements in lakhs -> market_cap = 100.0
+# Rs crore (BharatStock returns market_cap in crores everywhere).
+market_cap = ["stock.market_cap", "stock.metrics.market_cap"]
+
+total_debt = ["stock.metrics.total_debt"]
+
+# BharatStock has no cash-balance field, but it has cash_per_share.
+# cash = cash_per_share * shares = cash_per_share * market_cap / price,
+# which comes out in Rs crore, the same unit as market_cap.
+cash_and_interest_investments = [
+  "stock.metrics.cash_per_share * stock.market_cap / stock.metrics.price",
+  "stock.metrics.cash_per_share * stock.metrics.market_cap / stock.metrics.price",
+]
+
+# Revenue and income come from the SAME annual filing row, so their units
+# always match. Consolidated figures are preferred (what Musaffa/Zoya use).
+total_revenue = [
+  "financials.data[consolidation_type=consolidated].revenue",
+  "financials.data[0].revenue",
+]
+# BharatStock has no separate interest-income field. "Other income"
+# (interest + dividends + investment gains) is used instead. It is an UPPER
+# BOUND on interest income; see impermissible_income_is_upper_bound in
+# screening.toml.
+interest_income = [
+  "financials.data[consolidation_type=consolidated].other_income",
+  "financials.data[0].other_income",
+]
+data_date = [
+  "financials.data[consolidation_type=consolidated].period_end_date",
+  "financials.data[0].period_end_date",
+]
+
+# Multiply each raw value by this factor so the two halves of each ratio share
+# a unit. Debt and cash are divided by market cap (crores); income is divided
+# by revenue (same filing row, so their units match automatically).
 [units]
 market_cap = 1.0
 total_debt = 1.0

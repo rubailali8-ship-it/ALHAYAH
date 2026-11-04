@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from screener.config import CONFIG_DIR, load_api_config, load_screening_config
 from screener.data_fetcher import DEFAULT_CACHE_DIR, DataFetcher, iter_leaf_paths
+from screener.env import get_api_key, load_env
 from screener.output import print_summary, write_csv
 from screener.screening import screen_company
 
@@ -33,11 +31,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--offline", action="store_true", help="use cache only, never call the API")
     p.add_argument("--inspect", metavar="SYMBOL", help="print every JSON path in a cached response, then exit")
     args = p.parse_args(argv)
+    # Windows consoles / redirected output may not be UTF-8; never crash on a symbol.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
-    load_dotenv(HERE / ".env")
+    env_files = load_env(HERE / ".env")
+    api_key = get_api_key()
+    if not api_key and not args.offline:
+        where = ", ".join(str(f) for f in env_files) or f"{HERE / '.env'} (not found)"
+        print(f"WARNING: DATA_API_KEY not found. Looked in: {where}\n"
+              "  The file should contain one line:  DATA_API_KEY=bsk_live_...", file=sys.stderr)
     api_cfg = load_api_config()
     fetcher = DataFetcher(
-        api_cfg, os.getenv("DATA_API_KEY"), cache_dir=args.cache_dir,
+        api_cfg, api_key, cache_dir=args.cache_dir,
         offline=args.offline, refresh=args.refresh,
     )
 
@@ -49,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         for path, value in iter_leaf_paths(entry["data"]):
             print(f"{path} = {value!r}")
+        fin = fetcher.extract(args.inspect, entry)
+        print("\n# Mapped fields (what the screener will use):")
+        for k in ("company", "sector", "industry", "market_cap", "total_debt",
+                  "cash_and_interest_investments", "total_revenue", "interest_income", "data_date"):
+            print(f"#   {k:<30} {getattr(fin, k)!r}")
         return 0
 
     cfg = load_screening_config()

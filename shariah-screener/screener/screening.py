@@ -59,6 +59,14 @@ def screen_company(fin: CompanyFinancials, cfg: ScreeningConfig) -> ScreeningRes
         evaluate_ratio(CASH, fin.cash_and_interest_investments, fin.market_cap, cfg.cash_threshold, m),
         evaluate_ratio(INCOME, fin.interest_income, fin.total_revenue, cfg.income_threshold, m),
     ]
+    income = ratios[2]
+    if cfg.income_is_upper_bound and income.passed is False and not income.borderline:
+        # The proxy only overstates, so this fail isn't proven. Flag it, don't convict.
+        income.borderline = True
+        notes.append(
+            f"income ratio {income.value_pct:.2f}% uses a broad proxy (e.g. other income); "
+            "verify true interest income in the annual report"
+        )
 
     missing = [f for f in FINANCIAL_FIELDS if getattr(fin, f) is None]
     if fin.fetch_error:

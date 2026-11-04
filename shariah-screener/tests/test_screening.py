@@ -162,3 +162,16 @@ def test_shipped_config_loads_and_flags_known_nifty_names():
     passed, reason = screen_business(company(symbol="HDFCBANK", sector="Financial Services",
                                              industry="Private Sector Bank"), cfg)
     assert passed is False and "conventional_finance" in reason
+
+
+# --- upper-bound income proxy ("other income") ---------------------------------
+def test_upper_bound_income_fail_is_downgraded_to_doubtful(cfg):
+    from dataclasses import replace
+    ub = replace(cfg, income_is_upper_bound=True)
+    r = screen_company(company(interest=60.0), ub)  # 12% "other income"
+    assert r.verdict is Verdict.DOUBTFUL
+    assert any("proxy" in n for n in r.notes)
+    # ...but it never rescues a clear debt failure
+    assert screen_company(company(interest=60.0, debt=500.0), ub).verdict is Verdict.NOT_HALAL
+    # ...and a pass is still a clean pass
+    assert screen_company(company(), ub).verdict is Verdict.HALAL
