@@ -1,0 +1,14 @@
+{
+  "source": "tanzil.net (Uthmani)",
+  "fetched": false,
+  "fetchedAt": null,
+  "note": "Tanzil.net was unreachable from the build environment (network policy). Run `npm run fetch-quran` on a machine with internet access to fill these verses verbatim from Tanzil.",
+  "license": null,
+  "verses": {
+    "1:1": null,
+    "112:1": null,
+    "112:2": null,
+    "112:3": null,
+    "112:4": null
+  }
+}
